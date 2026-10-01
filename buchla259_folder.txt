@@ -1,0 +1,58 @@
+#persample
+/*
+Buchla 259-style wavefolder for the Drambo Code module
+
+Model: five parallel folding cells summed with alternating signs, after the
+Buchla 259 analysis by Esqueda, Poentynen, Parker and Bilbao (DAFx-17).
+Each cell is linear above its threshold g:  F(x) = k * (|x| - g) * sign(x)
+Anti-aliasing: first-order antiderivative anti-aliasing (ADAA).
+Params: Fold = drive, Symmetry = DC offset (0.5 = symmetric),
+Mix = dry/wet, Level = output gain (0.5 = unity, soft limited).
+*/
+
+in = input(audio)
+foldP = param(value, Fold)
+symP = param(value, Symmetry)
+mixP = param(value, Mix)
+levelP = param(value, Level)
+
+// de-zipper the knobs
+foldS = lpf6(foldP, 30)
+symS = lpf6(symP, 30)
+
+// input in "volts": 0.5x .. 6x drive (past ~6 the model leaves its folding range), offset +-2 V
+drive = 0.5 + foldS * foldS * 5.5
+x = in * drive + (symS - 0.5) * 4
+
+// cell residues: r = max(|x| - threshold, 0)
+ax = abs(x)
+s = sign(x)
+r1 = max(ax - 0.6, 0)
+r2 = max(ax - 2.994, 0)
+r3 = max(ax - 5.46, 0)
+r4 = max(ax - 1.8, 0)
+r5 = max(ax - 4.08, 0)
+
+// folding function F(x) = 5x + sum(c_k * F_k)
+f = 5 * x + s * (10.1347 * r4 + 9.7198 * r5 - 9.9996 * r1 - 10.4664 * r2 - 6.062 * r3)
+
+// antiderivative G(x), each cell integrates to c_k * r_k^2 / 2
+g = 2.5 * x * x + 0.5 * (10.1347 * r4 * r4 + 9.7198 * r5 * r5 - 9.9996 * r1 * r1 - 10.4664 * r2 * r2 - 6.062 * r3 * r3)
+
+// ADAA: y = (G(x) - G(x[n-1])) / (x - x[n-1]), fall back to F(x) when the step is tiny
+d = x - xp
+small = abs(d) < 0.00001
+den = small ? 1 : d
+ya = (g - gp) / den
+y = small ? f : ya
+
+// state for the next sample
+xp = x
+gp = g
+
+// normalise (peaks around +-3.4), remove DC from Symmetry, mix, soft limit
+wet = hpf6(y * 0.3, 8)
+o = mix(wet, in, mixP)
+out = tanh(o * levelP * 2)
+
+output(out, audio)

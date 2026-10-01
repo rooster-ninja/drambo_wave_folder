@@ -1,0 +1,38 @@
+#persample
+/*
+Vactrol low pass gate (Buchla 292-style) for the Drambo Code module
+
+A gate (or a ping) drives a modelled vactrol: fast attack, slow release that
+gets slower as the cell darkens. The vactrol level opens a low pass filter and
+a VCA together, so notes close darker as well as quieter.
+Params: Decay = release time, Ping = 0 sustains with the gate, >0.5 strikes
+a short pulse on each note (bongo-style), Mode = 0 VCA only .. 1 LPF+VCA,
+Resonance = filter emphasis.
+*/
+
+in = input(audio)
+gt = input(gate)
+decay = param(time, Decay)
+pingP = param(value, Ping)
+modeP = param(value, Mode)
+resP = param(value, Resonance)
+
+// control: held gate, or a 10 ms strike in ping mode
+strike = envD(gt, 0.01)
+ctl = pingP > 0.5 ? strike : gt
+
+// vactrol: one pole with separate attack/release, release slows as v falls
+rel = max(decay, 0.02) * (0.5 + 1 - v)
+tau = ctl > v ? 0.002 : rel
+v = v + (ctl - v) * (1 - exp(0 - 1 / (tau * sampleRate)))
+
+// LDR response is non-linear: cutoff ~30 Hz .. 18 kHz, amplitude ~ v^2
+cutoff = 30 * pow(600, v)
+amp = v * v
+
+// Mode blends from fully open filter (pure VCA) to tracking LPF
+fc = mix(cutoff, 18000, modeP)
+filtered = lpf(in, fc, resP * 0.7)
+out = filtered * amp
+
+output(out, audio)
