@@ -1,0 +1,66 @@
+// Vactrol low pass gate (Buchla 292-style), gen~ codebox, stereo
+// Same vactrol model as ../../vactrol_lpg.txt. A Live audio effect has no
+// note gate, so the gate comes from the Gate parameter (map or automate it)
+// and/or an envelope follower on the input (Follow on).
+
+Param decaytime(0.4, min=0.02, max=10);
+Param pingmode(0, min=0, max=1);
+Param lpgmode(1, min=0, max=1);
+Param resonance(0.2, min=0, max=1);
+Param gateon(0, min=0, max=1);
+Param followon(1, min=0, max=1);
+Param thresh(0.1, min=0.001, max=1);
+
+History env(0);
+History fgate(0);
+History gprev(0);
+History strike(0);
+History v(0);
+History l1(0);
+History l2(0);
+History r1(0);
+History r2(0);
+
+// envelope follower with hysteresis: open above thresh, close below thresh/2
+a = max(abs(in1), abs(in2));
+env = max(a, env * exp(-1 / (0.05 * samplerate)));
+fgate = env > thresh ? 1 : (env < thresh * 0.5 ? 0 : fgate);
+gt = max(gateon > 0.5, followon > 0.5 && fgate > 0.5);
+
+// ping: a 10 ms decaying strike on each rising edge
+strike = (gt > 0.5 && gprev < 0.5) ? 1 : strike * exp(-1 / (0.01 * samplerate));
+gprev = gt;
+ctl = pingmode > 0.5 ? strike : gt;
+
+// vactrol: 2 ms attack, release slows as the cell darkens
+tau = ctl > v ? 0.002 : decaytime * (1.5 - v);
+v = v + (ctl - v) * (1 - exp(-1 / (tau * samplerate)));
+
+// LDR response: cutoff ~30 Hz .. 18 kHz, amplitude ~ v^2
+cutoff = 30 * pow(600, v);
+amp = v * v;
+
+// Mode 0 = VCA only (filter open), 1 = LPF + VCA
+fc = min(mix(18000, cutoff, lpgmode), samplerate * 0.45);
+
+// TPT state-variable low pass, shared coefficients, one state pair per channel
+g = tan(pi * fc / samplerate);
+kd = 2 - 1.8 * resonance;
+a1 = 1 / (1 + g * (g + kd));
+a2 = g * a1;
+a3 = g * a2;
+
+v3l = in1 - l2;
+v1l = a1 * l1 + a2 * v3l;
+v2l = l2 + a2 * l1 + a3 * v3l;
+l1 = 2 * v1l - l1;
+l2 = 2 * v2l - l2;
+
+v3r = in2 - r2;
+v1r = a1 * r1 + a2 * v3r;
+v2r = r2 + a2 * r1 + a3 * v3r;
+r1 = 2 * v1r - r1;
+r2 = 2 * v2r - r2;
+
+out1 = v2l * amp;
+out2 = v2r * amp;

@@ -1,0 +1,68 @@
+// Buchla 259-style wavefolder (gen~ codebox), stereo
+// Same model as ../../buchla259_folder.txt: five parallel folding cells
+// (Esqueda, Poentynen, Parker, Bilbao, DAFx-17) with first-order ADAA.
+
+// folding function F(x) = 5x + sum(c_k * max(|x| - g_k, 0) * sign(x))
+foldF(x) {
+	ax = abs(x);
+	r1 = max(ax - 0.6, 0);
+	r2 = max(ax - 2.994, 0);
+	r3 = max(ax - 5.46, 0);
+	r4 = max(ax - 1.8, 0);
+	r5 = max(ax - 4.08, 0);
+	return 5 * x + sign(x) * (10.1347 * r4 + 9.7198 * r5 - 9.9996 * r1 - 10.4664 * r2 - 6.062 * r3);
+}
+
+// antiderivative G(x), each cell integrates to c_k * r_k^2 / 2
+foldG(x) {
+	ax = abs(x);
+	r1 = max(ax - 0.6, 0);
+	r2 = max(ax - 2.994, 0);
+	r3 = max(ax - 5.46, 0);
+	r4 = max(ax - 1.8, 0);
+	r5 = max(ax - 4.08, 0);
+	return 2.5 * x * x + 0.5 * (10.1347 * r4 * r4 + 9.7198 * r5 * r5 - 9.9996 * r1 * r1 - 10.4664 * r2 * r2 - 6.062 * r3 * r3);
+}
+
+Param foldamt(0.4, min=0, max=1);
+Param symmetry(0.5, min=0, max=1);
+Param drywet(1, min=0, max=1);
+Param outlevel(0.5, min=0, max=1);
+
+History fs(0.4);
+History ss(0.5);
+History xp1(0);
+History gp1(0);
+History xp2(0);
+History gp2(0);
+
+// de-zipper the knobs (30 Hz one-pole)
+k = 1 - exp(-twopi * 30 / samplerate);
+fs = fs + (foldamt - fs) * k;
+ss = ss + (symmetry - ss) * k;
+
+// input in "volts": 0.5x .. 6x drive, offset +-2 V
+drive = 0.5 + fs * fs * 5.5;
+offset = (ss - 0.5) * 4;
+
+// left: ADAA y = (G(x) - G(x[n-1])) / (x - x[n-1]), F(x) when the step is tiny
+x1 = in1 * drive + offset;
+g1 = foldG(x1);
+d1 = x1 - xp1;
+y1 = abs(d1) < 0.00001 ? foldF(x1) : (g1 - gp1) / (abs(d1) < 0.00001 ? 1 : d1);
+xp1 = x1;
+gp1 = g1;
+
+// right
+x2 = in2 * drive + offset;
+g2 = foldG(x2);
+d2 = x2 - xp2;
+y2 = abs(d2) < 0.00001 ? foldF(x2) : (g2 - gp2) / (abs(d2) < 0.00001 ? 1 : d2);
+xp2 = x2;
+gp2 = g2;
+
+// normalise (peaks around +-3.4), remove DC from Symmetry, mix, soft limit
+w1 = dcblock(y1 * 0.3);
+w2 = dcblock(y2 * 0.3);
+out1 = tanh(mix(in1, w1, drywet) * outlevel * 2);
+out2 = tanh(mix(in2, w2, drywet) * outlevel * 2);

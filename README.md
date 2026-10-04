@@ -8,6 +8,8 @@ Paste a script into a Code module and the knobs and inputs appear automatically.
 | `buchla259_folder.txt` | Buchla 259-style wavefolder: five parallel folding cells with antiderivative anti-aliasing (ADAA) |
 | `vactrol_lpg.txt` | Buchla 292-style vactrol low pass gate with gate and ping modes |
 
+Max for Live versions of both (gen~, stereo audio effects) are in [`m4l/`](m4l/README.md).
+
 Classic patch: sine/triangle oscillator → **259 folder** → **vactrol LPG**, with the
 note gate on the LPG and an envelope or LFO modulating **Fold**.
 
